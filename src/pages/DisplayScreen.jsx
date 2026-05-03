@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
+import { DEMO_PATIENTS } from '../App'
 
 const SOCKET_URL = 'http://localhost:5001'
 const API = 'http://localhost:5001/api/patients'
 
-export default function DisplayScreen({ onBack }) {
+export default function DisplayScreen({ onBack, isDemo = false }) {
   const [nowServing, setNowServing] = useState(null)
   const [waitingCount, setWaitingCount] = useState(0)
   const [fetchError, setFetchError] = useState(false)
@@ -16,13 +17,11 @@ export default function DisplayScreen({ onBack }) {
   const processPatients = (allPatients) => {
     const waiting = allPatients.filter(p => p.status === 'waiting')
     const current = waiting[0] || null
-
     if (current && prevTokenRef.current !== null && prevTokenRef.current !== current.tokenNumber) {
       setFlash(true)
       setTimeout(() => setFlash(false), 1000)
     }
     prevTokenRef.current = current ? current.tokenNumber : null
-
     setNowServing(current)
     setWaitingCount(waiting.length)
     setLastUpdated(new Date())
@@ -30,22 +29,23 @@ export default function DisplayScreen({ onBack }) {
   }
 
   useEffect(() => {
-    // initial HTTP fetch
+    if (isDemo) {
+      processPatients(DEMO_PATIENTS)
+      return
+    }
+
     fetch(API)
       .then(res => { if (!res.ok) throw new Error(); return res.json() })
       .then(data => processPatients(data.data))
       .catch(() => setFetchError(true))
 
-    // socket
     const socket = io(SOCKET_URL, { transports: ['websocket'] })
     socketRef.current = socket
-
     socket.on('connect', () => setFetchError(false))
     socket.on('disconnect', () => setFetchError(true))
     socket.on('queueUpdated', (allPatients) => processPatients(allPatients))
-
     return () => socket.disconnect()
-  }, [])
+  }, [isDemo])
 
   const timeText = lastUpdated
     ? lastUpdated.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -53,7 +53,6 @@ export default function DisplayScreen({ onBack }) {
 
   return (
     <div style={s.screen}>
-
       <div style={s.header}>
         <div style={s.headerLeft}>
           <span style={s.headerLogo}>🏥</span>
@@ -63,27 +62,26 @@ export default function DisplayScreen({ onBack }) {
           </div>
         </div>
         <div style={s.headerRight}>
-          <div style={{ ...s.statusDot, background: fetchError ? '#fc8181' : '#68d391' }} />
-          <p style={s.headerTime}>{fetchError ? 'Offline' : `Updated ${timeText}`}</p>
+          {isDemo && (
+            <span style={{ fontSize: 11, color: '#fbd38d', fontWeight: 700, marginRight: 8, background: 'rgba(251,211,61,0.15)', padding: '3px 10px', borderRadius: 20, border: '1px solid rgba(251,211,61,0.3)' }}>
+              DEMO
+            </span>
+          )}
+          <div style={{ ...s.statusDot, background: isDemo ? '#f6ad55' : fetchError ? '#fc8181' : '#68d391' }} />
+          <p style={s.headerTime}>{isDemo ? 'Demo Mode' : fetchError ? 'Offline' : `Updated ${timeText}`}</p>
           <button style={s.exitBtn} onClick={onBack}>✕ Exit</button>
         </div>
       </div>
 
       <div style={s.main}>
-        {fetchError ? (
+        {!isDemo && fetchError ? (
           <div style={s.errorBox}>
             <p style={s.errorIcon}>⚠️</p>
             <p style={s.errorTitle}>Cannot reach server</p>
             <p style={s.errorSub}>Reconnecting automatically...</p>
           </div>
         ) : nowServing ? (
-          <div style={{
-            ...s.tokenBox,
-            background: flash
-              ? 'linear-gradient(135deg, #276749, #38a169)'
-              : 'linear-gradient(135deg, #1a365d, #2b6cb0)',
-            transition: 'background 0.5s ease',
-          }}>
+          <div style={{ ...s.tokenBox, background: flash ? 'linear-gradient(135deg, #276749, #38a169)' : 'linear-gradient(135deg, #1a365d, #2b6cb0)', transition: 'background 0.5s ease' }}>
             <p style={s.nowServingLabel}>NOW SERVING — ابھی بلایا جا رہا ہے</p>
             <div style={s.tokenNumber}>{nowServing.tokenNumber}</div>
             <p style={s.patientName}>{nowServing.patientName}</p>
@@ -100,7 +98,7 @@ export default function DisplayScreen({ onBack }) {
           </div>
         )}
 
-        {!fetchError && (
+        {(isDemo || !fetchError) && (
           <div style={s.waitingCard}>
             <span style={s.waitingNum}>{waitingCount}</span>
             <span style={s.waitingLabel}>Patients Waiting — انتظار میں مریض</span>
@@ -112,7 +110,6 @@ export default function DisplayScreen({ onBack }) {
         <p style={s.footerText}>Please wait for your token number to be called</p>
         <p style={s.footerUrdu}>براہ کرم اپنے ٹوکن نمبر کا انتظار کریں</p>
       </div>
-
     </div>
   )
 }

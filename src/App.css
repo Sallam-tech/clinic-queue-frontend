@@ -420,3 +420,13 @@ p { margin: 0; }
   background: #ede9fe;
   border-color: #b794f4;
 }
+/* ── DEMO MODE ROLE BUTTON ─────────────────────────────── */
+.role-btn-demo {
+  background: #fffbeb;
+  border-color: #fbd38d;
+}
+
+.role-btn-demo:hover {
+  background: #fef3c7;
+  border-color: #f6ad55;
+}

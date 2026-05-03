@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
 import { io } from 'socket.io-client'
+import { DEMO_PATIENTS } from '../App'
 
 const API = 'http://localhost:5001/api/patients'
 const SOCKET_URL = 'http://localhost:5001'
@@ -33,15 +34,12 @@ const announceToken = (tokenNumber) => {
     if (!window.speechSynthesis) return
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(`Token number ${tokenNumber}, please come in`)
-    utterance.lang = 'en-US'
-    utterance.rate = 0.85
-    utterance.pitch = 1
-    utterance.volume = 1
+    utterance.lang = 'en-US'; utterance.rate = 0.85; utterance.pitch = 1; utterance.volume = 1
     setTimeout(() => window.speechSynthesis.speak(utterance), 700)
   } catch (e) { console.log('Speech not supported:', e) }
 }
 
-export default function DoctorPage() {
+export default function DoctorPage({ isDemo = false }) {
   const [queue, setQueue] = useState([])
   const [doneList, setDoneList] = useState([])
   const [loading, setLoading] = useState(false)
@@ -66,6 +64,8 @@ export default function DoctorPage() {
   const [serviceTimes, setServiceTimes] = useState([])
   const lastCallTime = useRef(null)
   const socketRef = useRef(null)
+  const demoNextId = useRef(100)
+  const demoNextToken = useRef(8)
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 480)
   const [isTiny, setIsTiny] = useState(window.innerWidth <= 360)
@@ -83,7 +83,39 @@ export default function DoctorPage() {
     ? Math.round(serviceTimes.reduce((a, b) => a + b, 0) / serviceTimes.length)
     : DEFAULT_AVG_MINS
 
-  // ── INITIAL HTTP FETCH ────────────────────────────────────
+  // ── DEMO MODE SETUP ───────────────────────────────────────
+  useEffect(() => {
+    if (isDemo) {
+      setQueue(DEMO_PATIENTS.filter(p => p.status === 'waiting'))
+      setDoneList(DEMO_PATIENTS.filter(p => p.status === 'done'))
+      setLastUpdated(new Date())
+      lastCallTime.current = Date.now()
+      return
+    }
+
+    // ── REAL MODE ─────────────────────────────────────────
+    const socket = io(SOCKET_URL, { transports: ['websocket'] })
+    socketRef.current = socket
+    socket.on('connect', () => setFetchError(false))
+    socket.on('disconnect', () => setFetchError(true))
+    socket.on('queueUpdated', (allPatients) => {
+      setQueue(allPatients.filter(p => p.status === 'waiting'))
+      setDoneList(allPatients.filter(p => p.status === 'done'))
+      setLastUpdated(new Date())
+      setFetchError(false)
+    })
+    fetchAll()
+    lastCallTime.current = Date.now()
+    return () => socket.disconnect()
+  }, [isDemo])
+
+  useEffect(() => {
+    if (actionError) {
+      const t = setTimeout(() => setActionError(''), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [actionError])
+
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
@@ -94,133 +126,143 @@ export default function DoctorPage() {
       setLastUpdated(new Date())
       setFetchError(false)
     } catch (err) {
-      console.error(err)
       setFetchError(true)
     }
     if (!silent) setLoading(false)
   }, [])
 
-  // ── SOCKET CONNECTION ─────────────────────────────────────
-  useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ['websocket'] })
-    socketRef.current = socket
-
-    socket.on('connect', () => {
-      setFetchError(false)
-    })
-
-    socket.on('disconnect', () => {
-      setFetchError(true)
-    })
-
-    socket.on('queueUpdated', (allPatients) => {
-      setQueue(allPatients.filter(p => p.status === 'waiting'))
-      setDoneList(allPatients.filter(p => p.status === 'done'))
-      setLastUpdated(new Date())
-      setFetchError(false)
-    })
-
-    // initial load via HTTP
-    fetchAll()
-    lastCallTime.current = Date.now()
-
-    return () => {
-      socket.disconnect()
-    }
-  }, [fetchAll])
-
-  useEffect(() => {
-    if (actionError) {
-      const t = setTimeout(() => setActionError(''), 4000)
-      return () => clearTimeout(t)
-    }
-  }, [actionError])
-
+  // ── MARK DONE ─────────────────────────────────────────────
   const markDone = async (id) => {
     setActionLoading(id)
     setActionError('')
+
+    if (isDemo) {
+      await new Promise(r => setTimeout(r, 400)) // fake delay
+      setQueue(prev => {
+        const updated = prev.filter(p => p._id !== id)
+        const done = prev.find(p => p._id === id)
+        if (done) setDoneList(dl => [...dl, { ...done, status: 'done' }])
+        const nextUp = updated[1]
+        const now = Date.now()
+        if (lastCallTime.current) {
+          const mins = (now - lastCallTime.current) / 1000 / 60
+          if (mins >= 0.01) setServiceTimes(s => [...s, Math.max(1, Math.round(mins))])
+        }
+        lastCallTime.current = now
+        if (updated[0]) {
+          playChime()
+          announceToken(updated[0].tokenNumber)
+          setCalledToken(updated[0].tokenNumber)
+          setTimeout(() => setCalledToken(null), 5000)
+        } else {
+          playChime()
+        }
+        setLastUpdated(new Date())
+        return updated
+      })
+      setActionLoading(null)
+      return
+    }
+
     try {
       const nextUp = queue[1]
       const now = Date.now()
       await axios.put(`${API}/${id}/done`)
-      // socket will update queue automatically
       if (lastCallTime.current) {
         const minutesTaken = (now - lastCallTime.current) / 1000 / 60
-        if (minutesTaken >= 1 && minutesTaken <= 60) {
-          setServiceTimes(prev => [...prev, Math.round(minutesTaken)])
-        }
+        if (minutesTaken >= 1 && minutesTaken <= 60) setServiceTimes(prev => [...prev, Math.round(minutesTaken)])
       }
       lastCallTime.current = now
       if (nextUp) {
-        playChime()
-        announceToken(nextUp.tokenNumber)
+        playChime(); announceToken(nextUp.tokenNumber)
         setCalledToken(nextUp.tokenNumber)
         setTimeout(() => setCalledToken(null), 5000)
-      } else {
-        playChime()
-      }
+      } else { playChime() }
     } catch (err) {
-      if (!err.response) {
-        setActionError('Server not reachable. Check connection and try again.')
-      } else {
-        setActionError('Could not update patient. Please try again.')
-      }
+      setActionError(!err.response ? 'Server not reachable.' : 'Could not update patient.')
     }
     setActionLoading(null)
   }
 
+  // ── DELETE ────────────────────────────────────────────────
   const deletePatient = async (id) => {
     setActionLoading(id)
     setActionError('')
+
+    if (isDemo) {
+      await new Promise(r => setTimeout(r, 300))
+      setQueue(prev => prev.filter(p => p._id !== id))
+      setLastUpdated(new Date())
+      setActionLoading(null)
+      return
+    }
+
     try {
       await axios.delete(`${API}/${id}`)
-      // socket will update queue automatically
     } catch (err) {
-      if (!err.response) {
-        setActionError('Server not reachable. Check connection and try again.')
-      } else {
-        setActionError('Could not delete patient. Please try again.')
-      }
+      setActionError(!err.response ? 'Server not reachable.' : 'Could not delete patient.')
     }
     setActionLoading(null)
   }
 
+  // ── ADD PATIENT ───────────────────────────────────────────
   const handleAddPatient = async () => {
     if (!newName.trim()) { setAddError('Patient name is required.'); return }
     setAddLoading(true)
     setAddError('')
-    try {
-      await axios.post(`${API}/add-patient`, {
-        patientName: newName, phone: newPhone, notes: newNotes,
-      })
-      setNewName('')
-      setNewPhone('')
-      setNewNotes('')
-      setShowAddPatient(false)
-      // socket will update queue automatically
-    } catch (err) {
-      if (!err.response) {
-        setAddError('Server not reachable. Check connection.')
-      } else {
-        setAddError('Could not add patient. Please try again.')
+
+    if (isDemo) {
+      await new Promise(r => setTimeout(r, 400))
+      const newPatient = {
+        _id: `demo_${demoNextId.current++}`,
+        tokenNumber: demoNextToken.current++,
+        patientName: newName,
+        phone: newPhone,
+        notes: newNotes,
+        status: 'waiting',
       }
+      setQueue(prev => [...prev, newPatient])
+      setNewName(''); setNewPhone(''); setNewNotes('')
+      setShowAddPatient(false)
+      setLastUpdated(new Date())
+      setAddLoading(false)
+      return
+    }
+
+    try {
+      await axios.post(`${API}/add-patient`, { patientName: newName, phone: newPhone, notes: newNotes })
+      setNewName(''); setNewPhone(''); setNewNotes('')
+      setShowAddPatient(false)
+    } catch (err) {
+      setAddError(!err.response ? 'Server not reachable.' : 'Could not add patient.')
     }
     setAddLoading(false)
   }
 
+  // ── WRAP UP ───────────────────────────────────────────────
   const handleWrapUp = async () => {
     setWrapLoading(true)
     setWrapError('')
+
+    if (isDemo) {
+      await new Promise(r => setTimeout(r, 400))
+      setSummaryData({
+        totalPatients: queue.length + doneList.length,
+        totalDone: doneList.length,
+        totalWaiting: queue.length,
+        donePatients: doneList,
+      })
+      setShowSummary(true)
+      setWrapLoading(false)
+      return
+    }
+
     try {
       const res = await axios.get(`${API}/summary`)
       setSummaryData(res.data.data)
       setShowSummary(true)
     } catch (err) {
-      if (!err.response) {
-        setWrapError('Server not reachable. Cannot load summary.')
-      } else {
-        setWrapError('Could not load summary. Please try again.')
-      }
+      setWrapError(!err.response ? 'Server not reachable.' : 'Could not load summary.')
     }
     setWrapLoading(false)
   }
@@ -228,35 +270,40 @@ export default function DoctorPage() {
   const handleClearAll = async () => {
     setWrapLoading(true)
     setWrapError('')
+
+    if (isDemo) {
+      await new Promise(r => setTimeout(r, 400))
+      setQueue([])
+      setDoneList([])
+      setServiceTimes([])
+      lastCallTime.current = null
+      demoNextToken.current = 1
+      setWrapDone(true)
+      setWrapLoading(false)
+      return
+    }
+
     try {
       await axios.delete(`${API}/wrap-up/all`)
       setWrapDone(true)
       setServiceTimes([])
       lastCallTime.current = null
-      // socket will clear queue automatically
     } catch (err) {
-      if (!err.response) {
-        setWrapError('Server not reachable. Could not clear data.')
-      } else {
-        setWrapError('Could not clear data. Please try again.')
-      }
+      setWrapError(!err.response ? 'Server not reachable.' : 'Could not clear data.')
     }
     setWrapLoading(false)
   }
 
   const handleNewDay = () => {
-    setShowSummary(false)
-    setWrapDone(false)
-    setSummaryData(null)
-    setWrapError('')
-    fetchAll()
+    setShowSummary(false); setWrapDone(false)
+    setSummaryData(null); setWrapError('')
+    if (!isDemo) fetchAll()
   }
 
   const today = new Date().toLocaleDateString('en-PK', {
     weekday: isMobile ? 'short' : 'long',
     year: isMobile ? undefined : 'numeric',
-    month: 'long',
-    day: 'numeric',
+    month: 'long', day: 'numeric',
   })
 
   const lastUpdatedText = lastUpdated
@@ -324,7 +371,6 @@ export default function DoctorPage() {
               </div>
             )}
           </div>
-
           <div style={{ ...s.summaryStatsRow, gap: isMobile ? 8 : 10 }}>
             <div style={{ ...s.summaryStat, background: '#f0fff4', border: '1.5px solid #9ae6b4' }}>
               <span style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: '#276749' }}>{summaryData?.totalDone || 0}</span>
@@ -339,7 +385,6 @@ export default function DoctorPage() {
               <span style={{ fontSize: 12, color: '#2b6cb0', fontWeight: 600 }}>Total</span>
             </div>
           </div>
-
           {summaryData?.donePatients?.length > 0 && (
             <div style={s.summaryList}>
               <p style={s.summaryListTitle}>Patients Seen Today</p>
@@ -358,15 +403,12 @@ export default function DoctorPage() {
               ))}
             </div>
           )}
-
           {wrapError && <div style={s.errBox}>{wrapError}</div>}
-
           <div style={s.wrapWarning}>
             <p style={{ fontSize: isMobile ? 12 : 13, color: '#744210' }}>
-              ⚠️ Clicking <strong>"Clear & Start Fresh"</strong> will permanently delete all patient data. This cannot be undone.
+              ⚠️ Clicking <strong>"Clear & Start Fresh"</strong> will permanently delete all patient data.
             </p>
           </div>
-
           <button style={{ ...s.clearBtn, opacity: wrapLoading ? 0.7 : 1 }} onClick={handleClearAll} disabled={wrapLoading}>
             {wrapLoading ? 'Clearing...' : 'Clear All & Start Fresh'}
           </button>
@@ -411,29 +453,26 @@ export default function DoctorPage() {
   // ── MAIN DOCTOR VIEW ──────────────────────────────────────
   return (
     <div className="page">
-
-      {fetchError && (
+      {fetchError && !isDemo && (
         <div style={s.fetchErrBanner}>
           <span style={s.fetchErrText}>⚠️ Cannot reach server — data may be outdated</span>
           <button style={s.fetchErrBtn} onClick={() => fetchAll(false)}>Retry</button>
         </div>
       )}
-
       {actionError && (
         <div style={s.actionErrBanner}>
           <span style={s.actionErrText}>⚠️ {actionError}</span>
           <button style={s.actionErrClose} onClick={() => setActionError('')}>✕</button>
         </div>
       )}
-
       {wrapError && !showSummary && <div style={s.errBox}>{wrapError}</div>}
 
       <div style={{ ...s.topBar, flexDirection: isTiny ? 'column' : 'row', alignItems: isTiny ? 'stretch' : 'flex-start', gap: isTiny ? 8 : 0 }}>
         <div>
           <p style={{ ...s.dateText, fontSize: isMobile ? 11 : 12 }}>{today}</p>
           <p style={s.liveText}>
-            <span style={{ ...s.liveDot, background: fetchError ? '#e53e3e' : '#38a169' }} />
-            {fetchError ? 'Offline' : `Live — updated ${lastUpdatedText}`}
+            <span style={{ ...s.liveDot, background: isDemo ? '#744210' : fetchError ? '#e53e3e' : '#38a169' }} />
+            {isDemo ? 'Demo Mode — offline preview' : fetchError ? 'Offline' : `Live — updated ${lastUpdatedText}`}
           </p>
         </div>
         <button style={{ ...s.wrapBtn, opacity: wrapLoading ? 0.7 : 1, alignSelf: isTiny ? 'flex-start' : undefined }}
@@ -459,65 +498,60 @@ export default function DoctorPage() {
         </div>
       )}
 
-      {loading && queue.length === 0 && !fetchError && (
+      {loading && queue.length === 0 && !fetchError && !isDemo && (
         <div style={s.loadingBox}><p style={s.loadingText}>Loading queue...</p></div>
       )}
 
-      {!loading && (
-        <>
-          <div style={s.statsRow}>
-            <div style={s.statBox}>
-              <span style={{ ...s.statNum, fontSize: isMobile ? 22 : 26 }}>{queue.length}</span>
-              <span style={s.statLabel}>Waiting</span>
-            </div>
-            <div style={{ ...s.statBox, background: 'linear-gradient(135deg,#f0fff4,#c6f6d5)' }}>
-              <span style={{ ...s.statNum, color: '#276749', fontSize: isMobile ? 22 : 26 }}>{doneList.length}</span>
-              <span style={s.statLabel}>Done</span>
-            </div>
-            <div style={{ ...s.statBox, background: 'linear-gradient(135deg,#fffbeb,#fefcbf)' }}>
-              <span style={{ ...s.statNum, color: '#744210', fontSize: isMobile ? 22 : 26 }}>{queue.length + doneList.length}</span>
-              <span style={s.statLabel}>Total</span>
-            </div>
+      <>
+        <div style={s.statsRow}>
+          <div style={s.statBox}>
+            <span style={{ ...s.statNum, fontSize: isMobile ? 22 : 26 }}>{queue.length}</span>
+            <span style={s.statLabel}>Waiting</span>
           </div>
+          <div style={{ ...s.statBox, background: 'linear-gradient(135deg,#f0fff4,#c6f6d5)' }}>
+            <span style={{ ...s.statNum, color: '#276749', fontSize: isMobile ? 22 : 26 }}>{doneList.length}</span>
+            <span style={s.statLabel}>Done</span>
+          </div>
+          <div style={{ ...s.statBox, background: 'linear-gradient(135deg,#fffbeb,#fefcbf)' }}>
+            <span style={{ ...s.statNum, color: '#744210', fontSize: isMobile ? 22 : 26 }}>{queue.length + doneList.length}</span>
+            <span style={s.statLabel}>Total</span>
+          </div>
+        </div>
 
-          {nextPatient ? (
-            <div style={s.nextCard}>
-              <div style={{ ...s.nextTop, flexDirection: isTiny ? 'column' : 'row', alignItems: isTiny ? 'flex-start' : 'center', gap: isTiny ? 10 : 12 }}>
-                <div style={{ ...s.nextLeft, minWidth: 0 }}>
-                  <p style={s.nextLabel}>NEXT PATIENT</p>
-                  <h2 style={{ ...s.nextName, fontSize: isMobile ? 18 : 22, wordBreak: 'break-word' }}>{nextPatient.patientName}</h2>
-                  {nextPatient.phone && <p style={s.nextDetail}>{nextPatient.phone}</p>}
-                  {nextPatient.notes && <p style={s.nextDetail}>{nextPatient.notes}</p>}
-                </div>
-                <div style={{ ...s.tokenCircle, width: isTiny ? 52 : 64, height: isTiny ? 52 : 64, flexShrink: 0 }}>
-                  <span style={{ ...s.tokenNum, fontSize: isTiny ? 20 : 24 }}>{nextPatient.tokenNumber}</span>
-                  <span style={s.tokenLabel}>No.</span>
-                </div>
+        {nextPatient ? (
+          <div style={s.nextCard}>
+            <div style={{ ...s.nextTop, flexDirection: isTiny ? 'column' : 'row', alignItems: isTiny ? 'flex-start' : 'center', gap: isTiny ? 10 : 12 }}>
+              <div style={{ ...s.nextLeft, minWidth: 0 }}>
+                <p style={s.nextLabel}>NEXT PATIENT</p>
+                <h2 style={{ ...s.nextName, fontSize: isMobile ? 18 : 22, wordBreak: 'break-word' }}>{nextPatient.patientName}</h2>
+                {nextPatient.phone && <p style={s.nextDetail}>{nextPatient.phone}</p>}
+                {nextPatient.notes && <p style={s.nextDetail}>{nextPatient.notes}</p>}
               </div>
-              <button
-                style={{ ...s.doneBtn, opacity: actionLoading === nextPatient._id ? 0.7 : 1, fontSize: isMobile ? 14 : 15, padding: isMobile ? '12px' : '14px' }}
-                onClick={() => markDone(nextPatient._id)}
-                disabled={actionLoading === nextPatient._id}
-              >
-                {actionLoading === nextPatient._id ? 'Updating...' : 'Done — Call Next Patient'}
-              </button>
+              <div style={{ ...s.tokenCircle, width: isTiny ? 52 : 64, height: isTiny ? 52 : 64, flexShrink: 0 }}>
+                <span style={{ ...s.tokenNum, fontSize: isTiny ? 20 : 24 }}>{nextPatient.tokenNumber}</span>
+                <span style={s.tokenLabel}>No.</span>
+              </div>
             </div>
-          ) : (
-            <div style={s.emptyCard}>
-              <p style={s.emptyTitle}>Queue is Empty</p>
-              <p style={s.emptySub}>کوئی مریض نہیں — تمام مریض مکمل</p>
-            </div>
-          )}
-        </>
-      )}
+            <button
+              style={{ ...s.doneBtn, opacity: actionLoading === nextPatient._id ? 0.7 : 1, fontSize: isMobile ? 14 : 15, padding: isMobile ? '12px' : '14px' }}
+              onClick={() => markDone(nextPatient._id)}
+              disabled={actionLoading === nextPatient._id}
+            >
+              {actionLoading === nextPatient._id ? 'Updating...' : 'Done — Call Next Patient'}
+            </button>
+          </div>
+        ) : (
+          <div style={s.emptyCard}>
+            <p style={s.emptyTitle}>Queue is Empty</p>
+            <p style={s.emptySub}>کوئی مریض نہیں — تمام مریض مکمل</p>
+          </div>
+        )}
+      </>
 
       <div style={{ ...s.searchRow, flexDirection: isTiny ? 'column' : 'row', gap: 8 }}>
-        <input
-          style={{ ...s.searchInput, fontSize: isMobile ? 12 : 13 }}
+        <input style={{ ...s.searchInput, fontSize: isMobile ? 12 : 13 }}
           placeholder={isMobile ? 'Search patients...' : 'Search by name, phone or problem...'}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+          value={search} onChange={e => setSearch(e.target.value)} />
         <button style={{ ...s.addBtn, width: isTiny ? '100%' : undefined, fontSize: isMobile ? 12 : 13 }}
           onClick={() => { setShowAddPatient(true); setAddError('') }}>
           + Add Patient
@@ -539,25 +573,13 @@ export default function DoctorPage() {
             <p style={s.emptyList}>{search ? `No results for "${search}"` : 'Queue is empty'}</p>
           ) : (
             filteredWaiting.map((p, i) => (
-              <div key={p._id} style={{
-                ...s.row,
-                background: i === 0 && !search ? '#ebf8ff' : 'white',
-                border: i === 0 && !search ? '1.5px solid #90cdf4' : '1.5px solid #e2e8f0',
-              }}>
+              <div key={p._id} style={{ ...s.row, background: i === 0 && !search ? '#ebf8ff' : 'white', border: i === 0 && !search ? '1.5px solid #90cdf4' : '1.5px solid #e2e8f0' }}>
                 <div style={{ ...s.rowLeft, minWidth: 0, flex: 1 }}>
-                  <div style={{
-                    ...s.badge,
-                    background: i === 0 && !search ? 'linear-gradient(135deg,#2b6cb0,#3182ce)' : '#edf2f7',
-                    color: i === 0 && !search ? 'white' : '#4a5568',
-                    width: isMobile ? 32 : 36, height: isMobile ? 32 : 36,
-                    minWidth: isMobile ? 32 : 36, fontSize: isMobile ? 12 : 14,
-                  }}>
+                  <div style={{ ...s.badge, background: i === 0 && !search ? 'linear-gradient(135deg,#2b6cb0,#3182ce)' : '#edf2f7', color: i === 0 && !search ? 'white' : '#4a5568', width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, minWidth: isMobile ? 32 : 36, fontSize: isMobile ? 12 : 14 }}>
                     {p.tokenNumber}
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <p style={{ ...s.rowName, fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {p.patientName}
-                    </p>
+                    <p style={{ ...s.rowName, fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.patientName}</p>
                     {p.phone && <p style={s.rowSub}>{p.phone}</p>}
                     {p.notes && <p style={s.rowSub}>{p.notes}</p>}
                     {i > 0 && <p style={s.rowWait}>~{i * avgServiceMins} min wait</p>}
@@ -566,15 +588,14 @@ export default function DoctorPage() {
                 <div style={{ ...s.rowActions, flexShrink: 0 }}>
                   {i === 0 && !search && !isTiny && <span style={s.nowPill}>Now</span>}
                   <button style={{ ...s.doneSmall, opacity: actionLoading === p._id ? 0.5 : 1, padding: isMobile ? '7px 10px' : '7px 11px' }}
-                    onClick={() => markDone(p._id)} disabled={!!actionLoading} title="Mark as done">✓</button>
+                    onClick={() => markDone(p._id)} disabled={!!actionLoading}>✓</button>
                   <button style={{ ...s.delSmall, opacity: actionLoading === p._id ? 0.5 : 1, padding: isMobile ? '7px 10px' : '7px 11px' }}
-                    onClick={() => deletePatient(p._id)} disabled={!!actionLoading} title="Remove patient">✕</button>
+                    onClick={() => deletePatient(p._id)} disabled={!!actionLoading}>✕</button>
                 </div>
               </div>
             ))
           )
         )}
-
         {tab === 'done' && (
           filteredDone.length === 0 ? (
             <p style={s.emptyList}>{search ? `No results for "${search}"` : 'No patients done yet'}</p>
@@ -582,13 +603,9 @@ export default function DoctorPage() {
             filteredDone.map(p => (
               <div key={p._id} style={{ ...s.row, opacity: 0.6, background: '#f7fafc' }}>
                 <div style={{ ...s.rowLeft, minWidth: 0, flex: 1 }}>
-                  <div style={{ ...s.badge, background: '#c6f6d5', color: '#276749', width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, minWidth: isMobile ? 32 : 36, fontSize: isMobile ? 12 : 14 }}>
-                    {p.tokenNumber}
-                  </div>
+                  <div style={{ ...s.badge, background: '#c6f6d5', color: '#276749', width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, minWidth: isMobile ? 32 : 36, fontSize: isMobile ? 12 : 14 }}>{p.tokenNumber}</div>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ ...s.rowName, textDecoration: 'line-through', color: '#a0aec0', fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {p.patientName}
-                    </p>
+                    <p style={{ ...s.rowName, textDecoration: 'line-through', color: '#a0aec0', fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.patientName}</p>
                     {p.notes && <p style={s.rowSub}>{p.notes}</p>}
                   </div>
                 </div>
