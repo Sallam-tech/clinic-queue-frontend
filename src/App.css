@@ -1,0 +1,422 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f0f4f8;
+  color: #1a202c;
+  min-height: 100vh;
+  font-size: 16px;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  border: none;
+  min-height: 100vh;
+}
+
+h1, h2, h3 {
+  font-weight: 700;
+  color: #2d3748;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  outline: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+input {
+  outline: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+p { margin: 0; }
+
+/* ── APP ───────────────────────────────────────────────── */
+.app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f0f4f8 0%, #e8f0fe 100%);
+}
+
+/* ── ROLE SELECTION SCREEN ─────────────────────────────── */
+.role-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  background: linear-gradient(135deg, #f0f4f8 0%, #e8f0fe 100%);
+}
+
+.role-loading {
+  text-align: center;
+}
+
+.role-card {
+  background: white;
+  border-radius: 20px;
+  padding: 32px 24px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  border: 1px solid #e2e8f0;
+  width: 100%;
+  max-width: 400px;
+}
+
+.role-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.role-logo {
+  font-size: 52px;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.role-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a202c;
+}
+
+.role-sub {
+  font-size: 13px;
+  color: #a0aec0;
+  margin-top: 4px;
+}
+
+.role-divider {
+  height: 1px;
+  background: #f0f4f8;
+  margin: 20px 0 16px 0;
+}
+
+.role-question {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.role-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.role-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+.role-btn:active {
+  transform: translateY(0);
+}
+
+.role-btn-patient {
+  background: #ebf4ff;
+  border-color: #bee3f8;
+}
+
+.role-btn-patient:hover {
+  background: #dbeafe;
+  border-color: #90cdf4;
+}
+
+.role-btn-doctor {
+  background: #f0fff4;
+  border-color: #9ae6b4;
+}
+
+.role-btn-doctor:hover {
+  background: #dcfce7;
+  border-color: #68d391;
+}
+
+.role-btn-icon {
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+.role-btn-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 2px;
+}
+
+.role-btn-sub {
+  font-size: 12px;
+  color: #718096;
+}
+
+/* ── NAVBAR ────────────────────────────────────────────── */
+.nav {
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 12px rgba(0,0,0,0.08);
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.nav-brand .logo {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  background: linear-gradient(135deg, #2b6cb0, #3182ce);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 2px 8px rgba(43,108,176,0.3);
+}
+
+.nav-brand h1 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #2b6cb0;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-brand p {
+  font-size: 10px;
+  color: #a0aec0;
+  margin: 0;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 6px;
+  background: #f7fafc;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.nav-tab {
+  padding: 7px 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  color: #718096;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.nav-tab:hover {
+  background: white;
+  color: #2b6cb0;
+}
+
+.nav-tab.active {
+  background: white;
+  color: #2b6cb0;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+}
+
+/* ── PAGE ──────────────────────────────────────────────── */
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+/* ════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — Tablet (≤600px)
+   ════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+
+  .role-card {
+    padding: 28px 20px;
+    border-radius: 18px;
+  }
+
+  .role-logo {
+    font-size: 44px;
+  }
+
+  .role-title {
+    font-size: 22px;
+  }
+
+  .role-btn {
+    padding: 15px 16px;
+    gap: 12px;
+  }
+
+  .role-btn-icon {
+    font-size: 30px;
+  }
+
+  .role-btn-title {
+    font-size: 16px;
+  }
+
+  .nav {
+    padding: 0 14px;
+    height: 56px;
+  }
+
+  .nav-brand .logo {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 18px;
+    border-radius: 10px;
+  }
+
+  .nav-brand h1 {
+    font-size: 15px;
+  }
+
+  .nav-brand p {
+    display: none;
+  }
+
+  .nav-tab {
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+
+  .page {
+    padding: 14px 12px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — Small phones (≤400px)
+   ════════════════════════════════════════════════════════ */
+@media (max-width: 400px) {
+
+  body {
+    font-size: 15px;
+  }
+
+  .role-card {
+    padding: 24px 16px;
+    border-radius: 16px;
+  }
+
+  .role-logo {
+    font-size: 40px;
+    margin-bottom: 8px;
+  }
+
+  .role-title {
+    font-size: 20px;
+  }
+
+  .role-question {
+    font-size: 14px;
+  }
+
+  .role-btn {
+    padding: 13px 14px;
+    gap: 10px;
+    border-radius: 12px;
+  }
+
+  .role-btn-icon {
+    font-size: 26px;
+  }
+
+  .role-btn-title {
+    font-size: 15px;
+  }
+
+  .role-btn-sub {
+    font-size: 11px;
+  }
+
+  .nav {
+    padding: 0 10px;
+    height: 52px;
+    gap: 6px;
+  }
+
+  .nav-brand {
+    gap: 7px;
+  }
+
+  .nav-brand .logo {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    font-size: 16px;
+    border-radius: 8px;
+  }
+
+  .nav-brand h1 {
+    font-size: 14px;
+  }
+
+  .nav-tabs {
+    padding: 3px;
+    gap: 4px;
+  }
+
+  .nav-tab {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 7px;
+  }
+
+  .page {
+    padding: 12px 10px;
+  }
+}
+/* ── DISPLAY SCREEN ROLE BUTTON ────────────────────────── */
+.role-btn-display {
+  background: #f5f0ff;
+  border-color: #d6bcfa;
+}
+
+.role-btn-display:hover {
+  background: #ede9fe;
+  border-color: #b794f4;
+}
